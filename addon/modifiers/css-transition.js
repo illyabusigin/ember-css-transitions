@@ -22,28 +22,40 @@ export default class CssTransitionModifier extends Modifier {
   clone = null;
   parentElement = null;
   nextElementSibling = null;
-
-
+  
   get el() {
     return this.clone || this.element;
   }
 
-  get transitionClass() {
-    return this.args.positional[0];
+  get enterEnabled() {
+    if (this.args.named.enter && this.args.named.enterActive) {
+      return true;
+    }
+
+    return false;
+  }
+
+  get leaveEnabled() {
+    if (this.args.named.leave && this.args.named.leaveActive) {
+      return true;
+    }
+
+    return false;
   }
 
   async didInstall() {
-    this.applyClasses();
+    if (!this.enterEnabled) {
+      return;
+    }
 
-    let transitionClass = this.transitionClass;
+    let transitionClass = this.args.named.enter.split(' ');
 
     if (transitionClass) {
       let animationType = 'enter';
-      let className = `${transitionClass}-${animationType}`;
-      this.addClass(className);
+      this.addClass(transitionClass);
 
       await nextTick();
-      await this.transition('enter', transitionClass);
+      await this.transition(animationType, transitionClass);
 
       if (this.args.named.didTransitionIn) {
         this.args.named.didTransitionIn();
@@ -55,15 +67,21 @@ export default class CssTransitionModifier extends Modifier {
   }
 
   async willRemove() {
-    let transitionClass = this.transitionClass;
+    if (!this.leaveEnabled) {
+      return;
+    }
+
+    let transitionClass = this.args.named.leave.split(' ');
 
     if (transitionClass) {
+      let animationType = 'leave';
+
       // We can't stop ember from removing the element
       // so we clone the element to animate it out
       this.addClone();
       await nextTick();
 
-      await this.transition('leave', transitionClass);
+      await this.transition(animationType, transitionClass);
 
       this.removeClone();
 
@@ -77,21 +95,19 @@ export default class CssTransitionModifier extends Modifier {
 
   prev = {};
 
-  ignoredArgs = ['didTransitionIn', 'didTransitionOut'];
+  ignoredArgs = [
+    'didTransitionIn',
+    'didTransitionOut',
+    'enter',
+    'enterActive',
+    'leave',
+    'leaveActive',
+  ];
 
   get validArgs() {
-    return Object.keys(this.args.named).filter(i => !this.ignoredArgs.includes(i));
-  }
-
-  applyClasses() {
-    for (let key of this.validArgs) {
-      let value = this.args.named[key];
-
-      if (value) {
-        let className = dasherize(key);
-        this.addClass(className);
-      }
-    }
+    return Object.keys(this.args.named).filter(
+      (i) => !this.ignoredArgs.includes(i)
+    );
   }
 
   async didUpdateArguments() {
@@ -124,7 +140,8 @@ export default class CssTransitionModifier extends Modifier {
   addClone() {
     let original = this.element;
     let parentElement = original.parentElement || this.parentElement;
-    let nextElementSibling = original.nextElementSibling || this.nextElementSibling;
+    let nextElementSibling =
+      original.nextElementSibling || this.nextElementSibling;
     let clone = original.cloneNode(true);
 
     clone.setAttribute('id', `${original.id}_clone`);
@@ -152,13 +169,19 @@ export default class CssTransitionModifier extends Modifier {
   async transition(animationType, transitionClass) {
     let element = this.el;
 
-    let className = `${transitionClass}-${animationType}`;
-    let activeClassName = `${className}-active`;
+    let className = transitionClass;
+    let activeClassName = (function (self) {
+      if (animationType == 'enter') {
+        return self.args.named.enterActive.split(' ');
+      }
+
+      return self.args.named.leaveActive.split(' ');
+    })(this);
 
     // add first class right away
     this.addClass(className);
 
-    await nextTick()
+    await nextTick();
 
     // This is for to force a repaint,
     // which is necessary in order to transition styles when adding a class name.
@@ -180,12 +203,15 @@ export default class CssTransitionModifier extends Modifier {
     this.removeClass(activeClassName);
   }
 
-  addClass(className) {
-    this.el.classList.add(className);
+  addClass(classNames) {
+    for (let c of classNames) {
+      this.el.classList.add(c);
+    }
   }
 
-  removeClass(className) {
-    this.el.classList.remove(className);
+  removeClass(classNames) {
+    for (let c of classNames) {
+      this.el.classList.remove(c);
+    }
   }
-
 }
